@@ -58,6 +58,7 @@
     <div>
       <h1>Shipping Exception Desk</h1>
       <div class="subtitle" id="subtitleText">Cases only - shipments with nothing wrong are never shown here</div>
+      <div class="subtitle" id="connectionStatus" style="margin-top:4px;"></div>
     </div>
     <button class="btn" id="themeToggle">Toggle theme</button>
   </div>
@@ -280,12 +281,25 @@ function trackingLink(carrier, tn) {
 
 async function loadCases() {
   const container = document.getElementById('caseList');
+  const statusEl = document.getElementById('connectionStatus');
+  statusEl.textContent = 'Connecting...';
+  statusEl.style.color = '';
   try {
     const body = await fetchTab('Cases');
-    if (body.error) { container.innerHTML = `<div class="empty-state">${escHtml(body.error)}</div>`; return; }
+    if (body.error) {
+      container.innerHTML = `<div class="empty-state">${escHtml(body.error)}</div>`;
+      statusEl.textContent = 'Not connected - ' + body.error;
+      statusEl.style.color = 'var(--p1)';
+      return;
+    }
     renderCases(body.rows || []);
+    const now = new Date().toLocaleString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    statusEl.textContent = 'Connected - last refreshed ' + now + ' (' + (body.rows || []).length + ' open case(s))';
+    statusEl.style.color = '#2b7a3c';
   } catch (err) {
     container.innerHTML = `<div class="empty-state">${escHtml(err.message)}</div>`;
+    statusEl.textContent = 'Not connected - ' + err.message;
+    statusEl.style.color = 'var(--p1)';
   }
 }
 
