@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shipping Exception Desk</title>
+<style>
+  :root {
+    --teal-900: #0b3d3a; --teal-700: #0f6b62; --teal-500: #16a394; --teal-100: #e3f5f2;
+    --ink: #1c2624; --sub: #5b6b68; --paper: #f6f8f7; --line: #e2e8e6; --surface: #ffffff;
+    --p1: #b3432f; --p1-bg: #fbe2dc; --p2: #c8862b; --p2-bg: #fbead8; --p3: #5b6b68; --p3-bg: #eef1f0;
+  }
+  body.dark {
+    --teal-100: #143430; --ink: #e7ece9; --sub: #93a19d; --paper: #10201d;
+    --line: #2b3d39; --surface: #182927;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--paper); color: var(--ink); font-size: 14px; }
+  main { max-width: 1400px; margin: 0 auto; padding: 24px 32px 60px; }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; flex-wrap: wrap; gap: 12px; }
+  h1 { font-size: 22px; margin: 0; }
+  .subtitle { font-size: 13px; color: var(--sub); margin: 2px 0 20px; }
+  .btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--ink); }
+  .btn:hover { border-color: var(--teal-500); background: var(--teal-100); }
+  .btn.primary { background: var(--teal-700); color: white; border-color: var(--teal-700); }
+  select, input[type=text], input[type=date], textarea { font-family: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
+  .upload-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .status-msg { font-size: 12.5px; }
+  .status-msg.ok { color: #2b7a3c; } .status-msg.err { color: var(--p1); }
+  .priority-group { margin-bottom: 22px; }
+  .priority-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .priority-badge { font-size: 12px; font-weight: 700; padding: 3px 12px; border-radius: 20px; }
+  .priority-badge.P1 { background: var(--p1-bg); color: var(--p1); }
+  .priority-badge.P2 { background: var(--p2-bg); color: var(--p2); }
+  .priority-badge.P3 { background: var(--p3-bg); color: var(--p3); }
+  .priority-label { font-size: 13px; color: var(--sub); }
+  .carrier-box { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; overflow: auto; max-height: 420px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--surface); color: var(--sub); font-size: 11px; text-transform: uppercase; z-index: 1; }
+  a.trklink { color: var(--teal-700); text-decoration: underline; }
+  .empty-state { padding: 24px; text-align: center; color: var(--sub); font-size: 13px; }
+  .cat-pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: var(--teal-100); color: var(--teal-900); white-space: nowrap; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal-box { background: var(--surface); border-radius: 12px; padding: 22px 24px; width: 640px; max-width: 92vw; max-height: 85vh; overflow-y: auto; }
+  .modal-box h3 { margin: 0 0 6px; }
+  .map-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+  .wip-note { font-size: 12px; color: var(--sub); margin-top: 30px; padding-top: 14px; border-top: 1px dashed var(--line); }
+</style>
+</head>
+<body>
+
+<main>
+  <div class="topbar">
+    <div>
+      <h1>Shipping Exception Desk</h1>
+      <div class="subtitle" id="subtitleText">Cases only - shipments with nothing wrong are never shown here</div>
+    </div>
+    <button class="btn" id="themeToggle">Toggle theme</button>
+  </div>
+
+  <div class="panel">
+    <div class="upload-row">
+      <label class="btn" style="cursor:pointer;">
+        Choose CSV
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+      </label>
+      <select id="carrierSelect">
+        <option value="FedEx">FedEx</option>
+        <option value="UPS">UPS</option>
+      </select>
+      <div class="status-msg" id="uploadStatus"></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--sub);margin-top:8px;">
+      Every upload re-checks every row against the rules - a shipment that was fine yesterday can become a case today. Nothing is committed until you confirm the column mapping.
+    </div>
+  </div>
+
+  <span class="btn" id="configToggle" style="cursor:pointer;display:inline-block;margin-bottom:14px;">Web App settings</span>
+  <div class="panel" id="configBox" style="display:none;">
+    <label style="font-size:12.5px;font-weight:600;">Apps Script Web App URL</label><br>
+    <input type="text" id="workerUrlInput" style="width:100%;margin-top:6px;" placeholder="https://script.google.com/macros/s/YOUR_ID/exec">
+  </div>
+
+  <form id="uploadForm" method="POST" target="edFrame" style="display:none;">
+    <input type="hidden" name="action" id="formAction">
+    <input type="hidden" name="carrier" id="formCarrier">
+    <input type="hidden" name="csvData" id="formCsvData">
+    <input type="hidden" name="mapping" id="formMapping">
+  </form>
+  <iframe name="edFrame" id="edFrame" style="display:none;"></iframe>
+
+  <div id="caseList">
+    <div class="empty-state">Loading...</div>
+  </div>
+
+  <div class="wip-note">
+    Weekly Snapshot, Root Causes, email templates, and an in-app Rules editor are planned but not built yet -
+    edit the <b>Rules</b> sheet tab directly for now to adjust grace periods and thresholds.
+  </div>
+</main>
+
+<div class="modal-overlay" id="mapModal">
+  <div class="modal-box">
+    <h3>Confirm column mapping</h3>
+    <div id="mapModalSubtext" style="font-size:12.5px;color:var(--sub);margin-bottom:14px;"></div>
+    <div id="mapModalRows"></div>
+    <div class="modal-actions">
+      <button class="btn" id="mapCancelBtn">Cancel</button>
+      <button class="btn primary" id="mapConfirmBtn">Confirm &amp; Import</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const workerUrlInput = document.getElementById('workerUrlInput');
+workerUrlInput.value = localStorage.getItem('edWorkerUrl') || '';
+document.getElementById('configToggle').addEventListener('click', () => {
+  document.getElementById('configBox').style.display =
+    document.getElementById('configBox').style.display === 'none' ? 'block' : 'none';
+});
+workerUrlInput.addEventListener('change', () => {
+  localStorage.setItem('edWorkerUrl', workerUrlInput.value.trim());
+  loadCases();
+});
+if (!workerUrlInput.value) document.getElementById('configBox').style.display = 'block';
+
+document.getElementById('themeToggle').addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  localStorage.setItem('edTheme', document.body.classList.contains('dark') ? 'dark' : 'light');
+});
+if (localStorage.getItem('edTheme') === 'dark') document.body.classList.add('dark');
+
+/* ---------- JSONP fetch (same pattern as the main dashboard) ---------- */
+function fetchTab(tab) {
+  return new Promise((resolve, reject) => {
+    const workerUrl = workerUrlInput.value.trim();
+    if (!workerUrl) { reject(new Error('Set the Web App URL first.')); return; }
+    const cb = 'edCb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    window[cb] = (body) => { delete window[cb]; script.remove(); resolve(body); };
+    script.onerror = () => { delete window[cb]; script.remove(); reject(new Error('Could not reach the Web App.')); };
+    script.src = workerUrl.replace(/\/$/, '') + '?tab=' + encodeURIComponent(tab) + '&callback=' + cb;
+    document.body.appendChild(script);
+  });
+}
+
+/* ---------- hidden-iframe POST (same pattern as the main dashboard) ---------- */
+let edFrameReady = false;
+let edPostInFlight = false;
+let edPostResolve = null;
+const edFrame = document.getElementById('edFrame');
+edFrame.addEventListener('load', () => {
+  if (!edFrameReady) { edFrameReady = true; return; }
+  if (!edPostInFlight) return;
+  edPostInFlight = false;
+  let result = null;
+  try {
+    const resultDiv = edFrame.contentDocument.getElementById('result');
+    if (resultDiv) result = JSON.parse(resultDiv.dataset.result);
+  } catch (err) { /* cross-origin read failure - result stays null */ }
+  if (edPostResolve) { edPostResolve(result); edPostResolve = null; }
+});
+function postAction(fields) {
+  return new Promise((resolve) => {
+    const workerUrl = workerUrlInput.value.trim();
+    if (!workerUrl) { resolve({ success: false, error: 'Set the Web App URL first.' }); return; }
+    document.getElementById('uploadForm').action = workerUrl;
+    Object.keys(fields).forEach(key => {
+      let el = document.getElementById('form' + key.charAt(0).toUpperCase() + key.slice(1));
+      if (!el) return;
+      el.value = fields[key];
+    });
+    edPostInFlight = true;
+    edPostResolve = resolve;
+    document.getElementById('uploadForm').submit();
+  });
+}
+
+/* ---------- CSV upload flow: preview -> confirm ---------- */
+let pendingCsvText = '';
+let pendingCarrier = '';
+let pendingSuggestedMapping = {};
+let pendingFields = [];
+
+document.getElementById('csvFileInput').addEventListener('change', () => {
+  const file = document.getElementById('csvFileInput').files[0];
+  if (!file) return;
+  pendingCarrier = document.getElementById('carrierSelect').value;
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = 'Reading file...';
+  statusEl.className = 'status-msg';
+
+  const reader = new FileReader();
+  reader.onload = async () => {
+    pendingCsvText = reader.result;
+    statusEl.textContent = 'Checking column mapping...';
+    const result = await postAction({ action: 'previewImport', carrier: pendingCarrier, csvData: pendingCsvText, mapping: '' });
+    if (!result || result.success === false) {
+      statusEl.textContent = 'Error: ' + (result ? result.error : 'no response');
+      statusEl.className = 'status-msg err';
+      return;
+    }
+    statusEl.textContent = '';
+    pendingSuggestedMapping = result.suggestedMapping;
+    pendingFields = result.fields;
+    openMapModal(result);
+  };
+  reader.readAsText(file);
+  document.getElementById('csvFileInput').value = '';
+});
+
+function openMapModal(previewResult) {
+  document.getElementById('mapModalSubtext').textContent =
+    previewResult.rowCount + ' row(s) found. ' +
+    (previewResult.hadSavedMapping ? 'Using your previously-confirmed mapping for ' + pendingCarrier + ' - adjust if this export format changed.' : 'First import for ' + pendingCarrier + ' - please confirm each field.');
+
+  const rowsHtml = pendingFields.map(f => {
+    const options = ['<option value="">-- not present --</option>']
+      .concat(previewResultHeaders().map(h => `<option value="${escAttr(h)}" ${pendingSuggestedMapping[f.key] === h ? 'selected' : ''}>${escHtml(h)}</option>`));
+    return `<div class="map-row"><label>${escHtml(f.label)}</label><select data-field="${f.key}">${options.join('')}</select></div>`;
+  }).join('');
+  document.getElementById('mapModalRows').innerHTML = rowsHtml;
+  document.getElementById('mapModal').classList.add('open');
+
+  function previewResultHeaders() {
+    return window._edLastHeaders || [];
+  }
+}
+// Stash headers separately since openMapModal is defined above its data arrives
+const _origOpenMapModal = openMapModal;
+openMapModal = function (previewResult) {
+  window._edLastHeaders = previewResult.headers;
+  _origOpenMapModal(previewResult);
+};
+
+document.getElementById('mapCancelBtn').addEventListener('click', () => {
+  document.getElementById('mapModal').classList.remove('open');
+});
+
+document.getElementById('mapConfirmBtn').addEventListener('click', async () => {
+  const mapping = {};
+  document.querySelectorAll('#mapModalRows select').forEach(sel => { mapping[sel.dataset.field] = sel.value; });
+  document.getElementById('mapModal').classList.remove('open');
+
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = 'Importing...';
+  statusEl.className = 'status-msg';
+
+  const result = await postAction({
+    action: 'confirmImport', carrier: pendingCarrier, csvData: pendingCsvText, mapping: JSON.stringify(mapping),
+  });
+
+  if (!result || result.success === false) {
+    statusEl.textContent = 'Error: ' + (result ? result.error : 'no response');
+    statusEl.className = 'status-msg err';
+    return;
+  }
+
+  let msg = result.rowsProcessed + ' row(s) processed - ' + result.casesCreated + ' new case(s), ' + result.casesUpdated + ' updated.';
+  if (result.deliveredButOpen > 0) msg += ' ' + result.deliveredButOpen + ' open case(s) now show Delivered - review and close if appropriate.';
+  statusEl.textContent = msg;
+  statusEl.className = 'status-msg ok';
+  loadCases();
+});
+
+/* ---------- case list rendering ---------- */
+function escHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function escAttr(s) { return escHtml(s); }
+
+function trackingLink(carrier, tn) {
+  if (!tn) return '';
+  if (carrier === 'UPS') return `<a class="trklink" href="https://www.ups.com/track?loc=en_US&tracknum=${encodeURIComponent(tn)}" target="_blank" rel="noopener">${escHtml(tn)}</a>`;
+  if (carrier === 'FedEx') return `<a class="trklink" href="https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tn)}" target="_blank" rel="noopener">${escHtml(tn)}</a>`;
+  return escHtml(tn);
+}
+
+async function loadCases() {
+  const container = document.getElementById('caseList');
+  try {
+    const body = await fetchTab('Cases');
+    if (body.error) { container.innerHTML = `<div class="empty-state">${escHtml(body.error)}</div>`; return; }
+    renderCases(body.rows || []);
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderCases(cases) {
+  const container = document.getElementById('caseList');
+  if (cases.length === 0) {
+    container.innerHTML = '<div class="empty-state">No open cases - everything is currently on track, or nothing has been imported yet.</div>';
+    return;
+  }
+
+  const byPriority = { P1: [], P2: [], P3: [] };
+  cases.forEach(c => { (byPriority[c['Priority']] || byPriority.P3).push(c); });
+
+  const priorityLabels = { P1: 'Immediate action', P2: 'Same-day follow-up', P3: 'Monitor' };
+  let html = '';
+
+  ['P1', 'P2', 'P3'].forEach(p => {
+    const list = byPriority[p];
+    if (list.length === 0) return;
+    html += `<div class="priority-group">
+      <div class="priority-head"><span class="priority-badge ${p}">${p}</span><span class="priority-label">${priorityLabels[p]} - ${list.length} case(s)</span></div>`;
+
+    ['FedEx', 'UPS'].forEach(carrier => {
+      const carrierList = list.filter(c => c['Carrier'] === carrier);
+      if (carrierList.length === 0) return;
+      html += `<div class="carrier-box"><table>
+        <thead><tr><th style="width:90px;">Q-Order</th><th style="width:130px;">Tracking</th><th>Customer</th><th style="width:110px;">Country</th><th style="width:130px;">Category</th><th>Why flagged</th><th style="width:90px;">Status</th><th style="width:120px;">Next Follow Up</th><th style="width:70px;">Owner</th></tr></thead>
+        <tbody>${carrierList.map(c => caseRow(c)).join('')}</tbody>
+      </table></div>`;
+    });
+    html += '</div>';
+  });
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('[data-case-id]').forEach(el => {
+    el.addEventListener('change', async (e) => {
+      const caseId = el.dataset.caseId;
+      const field = el.dataset.field;
+      const value = e.target.value;
+      await postAction({ action: 'updateCaseField', caseId: caseId, field: field, value: value });
+      if (field === 'status' && (value === 'Resolved' || value === 'Returned-Reshipped')) loadCases();
+    });
+  });
+}
+
+function caseRow(c) {
+  const deliveredNote = c['Delivered But Open'] === 'TRUE' ? ' <span style="color:#2b7a3c;font-weight:600;">(now Delivered)</span>' : '';
+  return `<tr>
+    <td>${escHtml(c['Q-Order'])}</td>
+    <td>${trackingLink(c['Carrier'], c['Tracking Number(s)'])}</td>
+    <td>${escHtml(c['Customer'])}</td>
+    <td>${escHtml(c['Country'])}</td>
+    <td><span class="cat-pill">${escHtml(c['Category'])}</span></td>
+    <td title="${escAttr(c['Triggers (why flagged)'])}">${escHtml(c['Triggers (why flagged)'])}${deliveredNote}</td>
+    <td><select data-case-id="${escAttr(c['Case ID'])}" data-field="status">
+      <option value="Open" ${c['Status']==='Open'?'selected':''}>Open</option>
+      <option value="Waiting on carrier" ${c['Status']==='Waiting on carrier'?'selected':''}>Waiting: carrier</option>
+      <option value="Waiting on customer" ${c['Status']==='Waiting on customer'?'selected':''}>Waiting: customer</option>
+      <option value="Resolved" ${c['Status']==='Resolved'?'selected':''}>Resolved</option>
+      <option value="Returned-Reshipped" ${c['Status']==='Returned-Reshipped'?'selected':''}>Returned/Reshipped</option>
+    </select></td>
+    <td><input type="date" data-case-id="${escAttr(c['Case ID'])}" data-field="nextFollowUp" value="${escAttr(c['Next Follow Up'])}"></td>
+    <td><input type="text" maxlength="4" data-case-id="${escAttr(c['Case ID'])}" data-field="owner" value="${escAttr(c['Owner'])}" style="width:60px;"></td>
+  </tr>`;
+}
+
+loadCases();
+</script>
+</body>
+</html>
