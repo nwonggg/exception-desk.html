@@ -51,6 +51,15 @@
   .map-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 13px; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
   .wip-note { font-size: 12px; color: var(--sub); margin-top: 30px; padding-top: 14px; border-top: 1px dashed var(--line); }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; margin-bottom: 18px; }
+  .kpi-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .kpi-num { font-size: 28px; font-weight: 700; line-height: 1; }
+  .kpi-num.P1 { color: var(--p1); } .kpi-num.P2 { color: var(--p2); }
+  .kpi-label { font-size: 12px; color: var(--sub); margin-top: 4px; }
+  nav.tabs { display: flex; gap: 2px; border-bottom: 2px solid var(--line); margin-bottom: 18px; overflow-x: auto; }
+  .tab-btn { font: 600 13px inherit; background: none; border: 0; padding: 9px 14px; color: var(--sub); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
+  .tab-btn.active { color: var(--ink); border-bottom-color: var(--teal-500); }
+  .tab-btn:hover { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -65,39 +74,88 @@
     <button class="btn" id="themeToggle">Toggle theme</button>
   </div>
 
-  <div class="panel" id="csvDropZone">
-    <div class="upload-row">
-      <label class="btn" style="cursor:pointer;">
-        Choose CSV
-        <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
-      </label>
-      <div style="font-size:11.5px;color:var(--sub);">or drag &amp; drop a file anywhere in this box</div>
-      <select id="carrierSelect">
-        <option value="FedEx">FedEx</option>
-        <option value="UPS">UPS</option>
-      </select>
-      <div class="upload-step2" id="uploadStep2" style="display:none;align-items:center;gap:10px;">
-        <span class="status-msg" id="fileChosenName"></span>
-        <button class="btn" id="clearCsvBtn">Clear</button>
-        <button class="btn primary" id="submitCsvBtn">Submit</button>
+  <div class="kpi-row" id="kpiRow">
+    <div class="kpi-card"><div class="kpi-num" id="kpiOpen">-</div><div class="kpi-label">Open cases</div></div>
+    <div class="kpi-card"><div class="kpi-num P1" id="kpiDryIce">-</div><div class="kpi-label">Dry ice at risk</div></div>
+    <div class="kpi-card"><div class="kpi-num P2" id="kpiFollowup">-</div><div class="kpi-label">Follow-ups due today</div></div>
+    <div class="kpi-card"><div class="kpi-num" id="kpiClosed">-</div><div class="kpi-label">Closed (this session)</div></div>
+  </div>
+
+  <nav class="tabs" id="tabNav">
+    <button class="tab-btn active" data-tab="today">Today</button>
+    <button class="tab-btn" data-tab="allcases">All cases</button>
+    <button class="tab-btn" data-tab="import">Carrier import</button>
+    <button class="tab-btn" data-tab="templates">Email templates</button>
+    <button class="tab-btn" data-tab="snapshot">Weekly snapshot</button>
+    <button class="tab-btn" data-tab="rootcauses">Root causes</button>
+    <button class="tab-btn" data-tab="rules">Rules</button>
+  </nav>
+
+  <div id="view-today" class="tab-view">
+    <div id="caseList">
+      <div class="empty-state">Loading...</div>
+    </div>
+  </div>
+
+  <div id="view-allcases" class="tab-view" style="display:none;">
+    <div class="empty-state">Coming Monday - a searchable/filterable browse of every case (open and closed), separate from Today's triage view.</div>
+  </div>
+
+  <div id="view-import" class="tab-view" style="display:none;">
+    <div class="panel" id="csvDropZone">
+      <div class="upload-row">
+        <label class="btn" style="cursor:pointer;">
+          Choose CSV
+          <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+        </label>
+        <div style="font-size:11.5px;color:var(--sub);">or drag &amp; drop a file anywhere in this box</div>
+        <select id="carrierSelect">
+          <option value="FedEx">FedEx</option>
+          <option value="UPS">UPS</option>
+        </select>
+        <div class="upload-step2" id="uploadStep2" style="display:none;align-items:center;gap:10px;">
+          <span class="status-msg" id="fileChosenName"></span>
+          <button class="btn" id="clearCsvBtn">Clear</button>
+          <button class="btn primary" id="submitCsvBtn">Submit</button>
+        </div>
+        <div class="status-msg" id="uploadStatus"></div>
       </div>
-      <div class="status-msg" id="uploadStatus"></div>
+      <div style="font-size:11.5px;color:var(--sub);margin-top:8px;">
+        Every upload re-checks every row against the rules - a shipment that was fine yesterday can become a case today. Nothing is committed until you confirm the column mapping.
+      </div>
+      <div style="font-size:11.5px;color:var(--sub);margin-top:6px;" id="lastImportsLine">Last imports: loading...</div>
     </div>
-    <div style="font-size:11.5px;color:var(--sub);margin-top:8px;">
-      Every upload re-checks every row against the rules - a shipment that was fine yesterday can become a case today. Nothing is committed until you confirm the column mapping.
+
+    <div class="panel" id="howItWorksPanel" style="display:none;">
+      <h2 style="margin:0 0 10px;">How it works</h2>
+      <div id="howItWorksText" style="font-size:13px;line-height:1.7;"></div>
     </div>
-    <div style="font-size:11.5px;color:var(--sub);margin-top:6px;" id="lastImportsLine">Last imports: loading...</div>
+
+    <span class="btn" id="configToggle" style="cursor:pointer;display:inline-block;margin-bottom:14px;">Web App settings</span>
+    <div class="panel" id="configBox" style="display:none;">
+      <label style="font-size:12.5px;font-weight:600;">Apps Script Web App URL</label><br>
+      <input type="text" id="workerUrlInput" style="width:100%;margin-top:6px;" placeholder="https://script.google.com/macros/s/YOUR_ID/exec">
+    </div>
   </div>
 
-  <div class="panel" id="howItWorksPanel" style="display:none;">
-    <h2 style="margin:0 0 10px;">How it works</h2>
-    <div id="howItWorksText" style="font-size:13px;line-height:1.7;"></div>
+  <div id="view-templates" class="tab-view" style="display:none;">
+    <div class="empty-state">Coming Monday - auto-picked email drafts based on each case's category, matching the main dashboard's approach.</div>
   </div>
 
-  <span class="btn" id="configToggle" style="cursor:pointer;display:inline-block;margin-bottom:14px;">Web App settings</span>
-  <div class="panel" id="configBox" style="display:none;">
-    <label style="font-size:12.5px;font-weight:600;">Apps Script Web App URL</label><br>
-    <input type="text" id="workerUrlInput" style="width:100%;margin-top:6px;" placeholder="https://script.google.com/macros/s/YOUR_ID/exec">
+  <div id="view-snapshot" class="tab-view" style="display:none;">
+    <div class="empty-state">Coming Monday - a Weekly Snapshot report builder, computed from real case history for this date range.</div>
+  </div>
+
+  <div id="view-rootcauses" class="tab-view" style="display:none;">
+    <div class="empty-state">Coming Monday - customs/duty holds by country, repeat customers, average days to resolve.</div>
+  </div>
+
+  <div id="view-rules" class="tab-view" style="display:none;">
+    <div class="panel">
+      <h2 style="margin:0 0 10px;">Current rules</h2>
+      <div id="rulesTableWrap" style="font-size:13px;">Loading...</div>
+      <div style="font-size:11.5px;color:var(--sub);margin-top:10px;">In-app editing isn't built yet - edit the <b>Rules</b> sheet tab directly, then reload this page.</div>
+    </div>
   </div>
 
   <form id="uploadForm" method="POST" target="edFrame" style="display:none;">
@@ -107,15 +165,6 @@
     <input type="hidden" name="mapping" id="formMapping">
   </form>
   <iframe name="edFrame" id="edFrame" style="display:none;"></iframe>
-
-  <div id="caseList">
-    <div class="empty-state">Loading...</div>
-  </div>
-
-  <div class="wip-note">
-    Weekly Snapshot, Root Causes, email templates, and an in-app Rules editor are planned but not built yet -
-    edit the <b>Rules</b> sheet tab directly for now to adjust grace periods and thresholds.
-  </div>
 </main>
 
 <div class="modal-overlay" id="mapModal">
@@ -252,6 +301,40 @@ csvDropZone.addEventListener('drop', (e) => {
   if (file) handleCsvFileSelected(file);
 });
 
+document.getElementById('tabNav').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.tab-view').forEach(v => { v.style.display = 'none'; });
+  document.getElementById('view-' + btn.dataset.tab).style.display = 'block';
+  if (btn.dataset.tab === 'rules') loadRulesTable();
+});
+
+async function loadRulesTable() {
+  const wrap = document.getElementById('rulesTableWrap');
+  wrap.textContent = 'Loading...';
+  try {
+    const body = await fetchTab('Rules');
+    if (body.error || !body.rules) { wrap.textContent = body.error || 'Could not load rules.'; return; }
+    const rows = Object.entries(body.rules).map(([k, v]) =>
+      `<tr><td style="padding:4px 10px 4px 0;color:var(--sub);">${escHtml(k)}</td><td style="padding:4px 0;">${escHtml(v)}</td></tr>`
+    ).join('');
+    wrap.innerHTML = `<table style="border-collapse:collapse;">${rows}</table>`;
+  } catch (err) {
+    wrap.textContent = err.message;
+  }
+}
+
+let closedThisSession = 0;
+
+function updateKpis(cases) {
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('kpiOpen').textContent = cases.length;
+  document.getElementById('kpiDryIce').textContent = cases.filter(c => c['Dry Ice'] === 'TRUE').length;
+  document.getElementById('kpiFollowup').textContent = cases.filter(c => c['Next Follow Up'] && c['Next Follow Up'] <= today).length;
+  document.getElementById('kpiClosed').textContent = closedThisSession;
+}
+
 /* Submit is the only thing that actually reads the file and starts
    the preview/mapping flow. */
 document.getElementById('submitCsvBtn').addEventListener('click', () => {
@@ -366,6 +449,7 @@ async function loadCases() {
       return;
     }
     renderCases(body.rows || []);
+    updateKpis(body.rows || []);
     const now = new Date().toLocaleString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
     statusEl.textContent = 'Connected - last refreshed ' + now + ' (' + (body.rows || []).length + ' open case(s))';
     statusEl.style.color = '#2b7a3c';
@@ -414,7 +498,7 @@ function renderCases(cases) {
       const field = el.dataset.field;
       const value = e.target.value;
       await postAction({ action: 'updateCaseField', caseId: caseId, field: field, value: value });
-      if (field === 'status' && (value === 'Resolved' || value === 'Returned-Reshipped')) loadCases();
+      if (field === 'status' && (value === 'Resolved' || value === 'Returned-Reshipped')) { closedThisSession++; loadCases(); }
     });
   });
 }
