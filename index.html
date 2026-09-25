@@ -149,14 +149,13 @@ function fetchTab(tab) {
   });
 }
 
-/* ---------- hidden-iframe POST (same pattern as the main dashboard) ---------- */
-let edFrameReady = false;
+/* ---------- hidden-iframe POST (same fix as the main dashboard - only trust
+   edPostInFlight, no fragile "ignore the first load" heuristic) ---------- */
 let edPostInFlight = false;
 let edPostResolve = null;
 const edFrame = document.getElementById('edFrame');
 edFrame.addEventListener('load', () => {
-  if (!edFrameReady) { edFrameReady = true; return; }
-  if (!edPostInFlight) return;
+  if (!edPostInFlight) return; // not a completion we're tracking - ignore
   edPostInFlight = false;
   let result = null;
   try {
