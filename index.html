@@ -26,6 +26,8 @@
   select, input[type=text], input[type=date], textarea { font-family: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); }
   .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
   .upload-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  #csvDropZone { transition: border-color 0.15s, background 0.15s; }
+  #csvDropZone.drag-over { border-color: var(--teal-500); border-style: dashed; background: var(--teal-100); }
   .status-msg { font-size: 12.5px; }
   .status-msg.ok { color: #2b7a3c; } .status-msg.err { color: var(--p1); }
   .priority-group { margin-bottom: 22px; }
@@ -63,21 +65,33 @@
     <button class="btn" id="themeToggle">Toggle theme</button>
   </div>
 
-  <div class="panel">
+  <div class="panel" id="csvDropZone">
     <div class="upload-row">
       <label class="btn" style="cursor:pointer;">
         Choose CSV
         <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
       </label>
+      <div style="font-size:11.5px;color:var(--sub);">or drag &amp; drop a file anywhere in this box</div>
       <select id="carrierSelect">
         <option value="FedEx">FedEx</option>
         <option value="UPS">UPS</option>
       </select>
+      <div class="upload-step2" id="uploadStep2" style="display:none;align-items:center;gap:10px;">
+        <span class="status-msg" id="fileChosenName"></span>
+        <button class="btn" id="clearCsvBtn">Clear</button>
+        <button class="btn primary" id="submitCsvBtn">Submit</button>
+      </div>
       <div class="status-msg" id="uploadStatus"></div>
     </div>
     <div style="font-size:11.5px;color:var(--sub);margin-top:8px;">
       Every upload re-checks every row against the rules - a shipment that was fine yesterday can become a case today. Nothing is committed until you confirm the column mapping.
     </div>
+    <div style="font-size:11.5px;color:var(--sub);margin-top:6px;" id="lastImportsLine">Last imports: loading...</div>
+  </div>
+
+  <div class="panel" id="howItWorksPanel" style="display:none;">
+    <h2 style="margin:0 0 10px;">How it works</h2>
+    <div id="howItWorksText" style="font-size:13px;line-height:1.7;"></div>
   </div>
 
   <span class="btn" id="configToggle" style="cursor:pointer;display:inline-block;margin-bottom:14px;">Web App settings</span>
@@ -185,9 +199,63 @@ let pendingCsvText = '';
 let pendingCarrier = '';
 let pendingSuggestedMapping = {};
 let pendingFields = [];
+let selectedCsvFile = null;
+
+/* File selection just stages the file - nothing is read or sent
+   until the operator explicitly clicks Submit. Shared by both the
+   "Choose CSV" click path and drag-and-drop. */
+function handleCsvFileSelected(file) {
+  const step2 = document.getElementById('uploadStep2');
+  const fileChosenName = document.getElementById('fileChosenName');
+  const statusEl = document.getElementById('uploadStatus');
+  if (!file) {
+    selectedCsvFile = null;
+    step2.style.display = 'none';
+    return;
+  }
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    statusEl.textContent = "That doesn't look like a CSV file.";
+    statusEl.className = 'status-msg err';
+    return;
+  }
+  selectedCsvFile = file;
+  fileChosenName.textContent = file.name;
+  step2.style.display = 'flex';
+  statusEl.textContent = '';
+  statusEl.className = 'status-msg';
+}
 
 document.getElementById('csvFileInput').addEventListener('change', () => {
-  const file = document.getElementById('csvFileInput').files[0];
+  handleCsvFileSelected(document.getElementById('csvFileInput').files[0]);
+});
+
+document.getElementById('clearCsvBtn').addEventListener('click', () => {
+  handleCsvFileSelected(null);
+  document.getElementById('csvFileInput').value = '';
+});
+
+const csvDropZone = document.getElementById('csvDropZone');
+['dragenter', 'dragover'].forEach(evt => {
+  csvDropZone.addEventListener(evt, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    csvDropZone.classList.add('drag-over');
+  });
+});
+['dragleave', 'drop'].forEach(evt => {
+  csvDropZone.addEventListener(evt, (e) => {
+    e.preventDefault(); e.stopPropagation();
+    csvDropZone.classList.remove('drag-over');
+  });
+});
+csvDropZone.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) handleCsvFileSelected(file);
+});
+
+/* Submit is the only thing that actually reads the file and starts
+   the preview/mapping flow. */
+document.getElementById('submitCsvBtn').addEventListener('click', () => {
+  const file = selectedCsvFile;
   if (!file) return;
   pendingCarrier = document.getElementById('carrierSelect').value;
   const statusEl = document.getElementById('uploadStatus');
@@ -208,9 +276,14 @@ document.getElementById('csvFileInput').addEventListener('change', () => {
     pendingSuggestedMapping = result.suggestedMapping;
     pendingFields = result.fields;
     openMapModal(result);
+    handleCsvFileSelected(null);
+    document.getElementById('csvFileInput').value = '';
+  };
+  reader.onerror = () => {
+    statusEl.textContent = 'Could not read that file.';
+    statusEl.className = 'status-msg err';
   };
   reader.readAsText(file);
-  document.getElementById('csvFileInput').value = '';
 });
 
 function openMapModal(previewResult) {
@@ -265,6 +338,7 @@ document.getElementById('mapConfirmBtn').addEventListener('click', async () => {
   statusEl.textContent = msg;
   statusEl.className = 'status-msg ok';
   loadCases();
+  loadLastImports();
 });
 
 /* ---------- case list rendering ---------- */
@@ -366,6 +440,40 @@ function caseRow(c) {
   </tr>`;
 }
 
+async function loadLastImports() {
+  const el = document.getElementById('lastImportsLine');
+  try {
+    const body = await fetchTab('LastImports');
+    if (body.error) { el.textContent = ''; return; }
+    const li = body.lastImports || {};
+    el.textContent = 'Last imports: FedEx ' + (li['FedEx'] || '—') + ' · UPS ' + (li['UPS'] || '—');
+  } catch (err) {
+    el.textContent = '';
+  }
+}
+
+async function loadHowItWorks() {
+  const panel = document.getElementById('howItWorksPanel');
+  const textEl = document.getElementById('howItWorksText');
+  try {
+    const body = await fetchTab('Rules');
+    if (body.error || !body.rules) { panel.style.display = 'none'; return; }
+    const r = body.rules;
+    textEl.innerHTML = `
+      <p><b>P1 - immediate action:</b> any dry ice shipment currently flagged, or a clearance delay where the carrier note mentions a broker, duties, taxes, or paperwork.</p>
+      <p><b>P2 - same-day follow-up</b> (then every ${r.p2CadenceBD} business day(s)): address issues, clearance delays, refused, misdelivered, delivered-not-received, lost, or damage.</p>
+      <p><b>P3 - monitor</b> (every ${r.p3CadenceBD} business day(s)): everything else that's flagged.</p>
+      <p style="margin-top:12px;"><b>What gets flagged on import:</b> a non-routine carrier status or reason · <b>Domestic:</b> past the expected delivery date by ${r.ndaGraceBD}+ business day(s) (dry ice gets zero grace), or no scan for ${r.watchDays}+ day(s) · <b>International:</b> not left the US within ${r.departDays} business day(s) of ship date, or no customs release within ${r.intlTransitBD} business day(s) of leaving the US (APAC gets ${r.apacExtraBD} extra) · dry ice international shipments flag starting day ${r.dryIntlAddDay} in transit.</p>
+      <p style="margin-top:12px;font-size:12px;color:var(--sub);">These are live values from the Rules sheet tab - edit that tab directly to change any threshold; this panel always reflects whatever is currently saved there.</p>
+    `;
+    panel.style.display = 'block';
+  } catch (err) {
+    panel.style.display = 'none';
+  }
+}
+
+loadLastImports();
+loadHowItWorks();
 loadCases();
 </script>
 </body>
