@@ -36,6 +36,7 @@
   .priority-badge.P1 { background: var(--p1-bg); color: var(--p1); }
   .priority-badge.P2 { background: var(--p2-bg); color: var(--p2); }
   .priority-badge.P3 { background: var(--p3-bg); color: var(--p3); }
+  .priority-badge.Watching { background: var(--teal-100); color: var(--teal-700); }
   .priority-label { font-size: 13px; color: var(--sub); }
   .carrier-box { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; overflow: auto; max-height: 420px; }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
@@ -467,13 +468,13 @@ function renderCases(cases) {
     return;
   }
 
-  const byPriority = { P1: [], P2: [], P3: [] };
+  const byPriority = { P1: [], P2: [], P3: [], Watching: [] };
   cases.forEach(c => { (byPriority[c['Priority']] || byPriority.P3).push(c); });
 
-  const priorityLabels = { P1: 'Immediate action', P2: 'Same-day follow-up', P3: 'Monitor' };
+  const priorityLabels = { P1: 'Immediate action', P2: 'Same-day follow-up', P3: 'Monitor', Watching: 'No follow-up needed' };
   let html = '';
 
-  ['P1', 'P2', 'P3'].forEach(p => {
+  ['P1', 'P2', 'P3', 'Watching'].forEach(p => {
     const list = byPriority[p];
     if (list.length === 0) return;
     html += `<div class="priority-group">
@@ -544,10 +545,12 @@ async function loadHowItWorks() {
     if (body.error || !body.rules) { panel.style.display = 'none'; return; }
     const r = body.rules;
     textEl.innerHTML = `
-      <p><b>P1 - immediate action:</b> any dry ice shipment currently flagged, or a clearance delay where the carrier note mentions a broker, duties, taxes, or paperwork.</p>
-      <p><b>P2 - same-day follow-up</b> (then every ${r.p2CadenceBD} business day(s)): address issues, clearance delays, refused, misdelivered, delivered-not-received, lost, or damage.</p>
+      <p><b>P1 - immediate action:</b> dry ice, high value ($${r.highValueThreshold}+), carrier searching for the package, likely lost (${r.likelyLostBD}+ business days late), a claim filed or confirmed lost/damaged, an overdue carrier investigation (${r.investigationWaitBD}+ business days with no result), or a clearance delay needing broker/duty/tax/paperwork action.</p>
+      <p><b>P2 - same-day follow-up</b> (then every ${r.p2CadenceBD} business day(s)): any customer order (Q- reference - never lower than P2), address issues, clearance delays, refused, misdelivered, delivered-not-received, lost, or damage.</p>
       <p><b>P3 - monitor</b> (every ${r.p3CadenceBD} business day(s)): everything else that's flagged.</p>
-      <p style="margin-top:12px;"><b>What gets flagged on import:</b> a non-routine carrier status or reason · <b>Domestic:</b> past the expected delivery date by ${r.ndaGraceBD}+ business day(s) (dry ice gets zero grace), or no scan for ${r.watchDays}+ day(s) · <b>International:</b> not left the US within ${r.departDays} business day(s) of ship date, or no customs release within ${r.intlTransitBD} business day(s) of leaving the US (APAC gets ${r.apacExtraBD} extra) · dry ice international shipments flag starting day ${r.dryIntlAddDay} in transit.</p>
+      <p><b>Watching - no follow-up needed:</b> weather or mechanical/flight delays, and "at risk of right day late" before the due date - unless the shipment is dry ice or high-value, which always outrank Watching.</p>
+      <p style="margin-top:12px;"><b>No-movement window (calendar hours since last scan, weekends included):</b> Domestic ${r.noMovementDomesticHrs}h · International ${r.noMovementIntlHrs}h · APAC ${r.noMovementApacHrs}h · Dry ice, any lane ${r.noMovementDryIceHrs}h.</p>
+      <p style="margin-top:8px;"><b>Clearance grace:</b> ${r.clearanceGraceBD} business day(s) (APAC ${r.clearanceGraceApacBD}) before an international customs hold escalates · dry ice international shipments get added to the tracker on day ${r.dryIceIntlAddDay} in transit and followed up on day ${r.dryIceIntlFollowUpDay}.</p>
       <p style="margin-top:12px;font-size:12px;color:var(--sub);">These are live values from the Rules sheet tab - edit that tab directly to change any threshold; this panel always reflects whatever is currently saved there.</p>
     `;
     panel.style.display = 'block';
