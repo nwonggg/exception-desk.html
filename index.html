@@ -99,7 +99,16 @@
   </div>
 
   <div id="view-allcases" class="tab-view" style="display:none;">
-    <div class="empty-state">Coming Monday - a searchable/filterable browse of every case (open and closed), separate from Today's triage view.</div>
+    <div class="panel" style="margin-bottom:14px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input type="text" id="allCasesSearch" placeholder="Search Q#, customer, tracking, case ID..." style="flex:1;min-width:220px;">
+        <select id="allCasesCarrier"><option value="">All carriers</option><option value="FedEx">FedEx</option><option value="UPS">UPS</option></select>
+        <select id="allCasesStatus"><option value="">All statuses</option></select>
+        <select id="allCasesPriority"><option value="">All priorities</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="Watching">Watching</option></select>
+        <button class="btn" id="allCasesRefreshBtn">Refresh</button>
+      </div>
+    </div>
+    <div id="allCasesList"><div class="empty-state">Click "All cases" to load.</div></div>
   </div>
 
   <div id="view-import" class="tab-view" style="display:none;">
@@ -309,6 +318,7 @@ document.getElementById('tabNav').addEventListener('click', (e) => {
   document.querySelectorAll('.tab-view').forEach(v => { v.style.display = 'none'; });
   document.getElementById('view-' + btn.dataset.tab).style.display = 'block';
   if (btn.dataset.tab === 'rules') loadRulesTable();
+  if (btn.dataset.tab === 'allcases' && allCasesData === null) loadAllCases();
 });
 
 async function loadRulesTable() {
@@ -325,6 +335,85 @@ async function loadRulesTable() {
     wrap.textContent = err.message;
   }
 }
+
+/* ---------- All Cases: searchable/filterable browse of every case ---------- */
+let allCasesData = null;
+
+async function loadAllCases() {
+  const container = document.getElementById('allCasesList');
+  container.innerHTML = '<div class="empty-state">Loading...</div>';
+  try {
+    const body = await fetchTab('AllCases');
+    if (body.error) { container.innerHTML = `<div class="empty-state">${escHtml(body.error)}</div>`; return; }
+    allCasesData = body.rows || [];
+
+    // Populate the status filter dropdown from whatever statuses
+    // actually exist in the data, rather than hardcoding the list -
+    // stays correct even if new statuses get added later.
+    const statusSelect = document.getElementById('allCasesStatus');
+    const statuses = [...new Set(allCasesData.map(c => c['Status']).filter(Boolean))].sort();
+    statusSelect.innerHTML = '<option value="">All statuses</option>' +
+      statuses.map(s => `<option value="${escAttr(s)}">${escHtml(s)}</option>`).join('');
+
+    renderAllCasesTable();
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">${escHtml(err.message)}</div>`;
+  }
+}
+
+function renderAllCasesTable() {
+  const container = document.getElementById('allCasesList');
+  if (!allCasesData) return;
+
+  const search = document.getElementById('allCasesSearch').value.trim().toLowerCase();
+  const carrierFilter = document.getElementById('allCasesCarrier').value;
+  const statusFilter = document.getElementById('allCasesStatus').value;
+  const priorityFilter = document.getElementById('allCasesPriority').value;
+
+  const filtered = allCasesData.filter(c => {
+    if (carrierFilter && c['Carrier'] !== carrierFilter) return false;
+    if (statusFilter && c['Status'] !== statusFilter) return false;
+    if (priorityFilter && c['Priority'] !== priorityFilter) return false;
+    if (search) {
+      const haystack = [c['Q-Order'], c['Customer'], c['Tracking Number(s)'], c['Case ID']].join(' ').toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state">No cases match these filters.</div>';
+    return;
+  }
+
+  const rows = filtered.map(c => `
+    <tr>
+      <td>${escHtml(c['Q-Order'])}</td>
+      <td>${trackingLink(c['Carrier'], c['Tracking Number(s)'])}</td>
+      <td>${escHtml(c['Customer'])}</td>
+      <td>${escHtml(c['Carrier'])}</td>
+      <td><span class="cat-pill">${escHtml(c['Category'])}</span></td>
+      <td>${c['Priority'] ? `<span class="priority-badge ${escAttr(c['Priority'])}">${escHtml(c['Priority'])}</span>` : ''}</td>
+      <td>${escHtml(c['Status'])}</td>
+      <td>${escHtml(c['Opened Date'])}</td>
+      <td>${escHtml(c['Resolved Date'])}</td>
+    </tr>`).join('');
+
+  container.innerHTML = `
+    <div style="font-size:12px;color:var(--sub);margin-bottom:8px;">${filtered.length} of ${allCasesData.length} case(s)</div>
+    <div class="carrier-box" style="max-height:600px;">
+      <table>
+        <thead><tr><th style="width:80px;">Q-Order</th><th style="width:120px;">Tracking</th><th>Customer</th><th style="width:70px;">Carrier</th><th style="width:140px;">Category</th><th style="width:80px;">Priority</th><th style="width:110px;">Status</th><th style="width:100px;">Opened</th><th style="width:100px;">Resolved</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+['allCasesSearch', 'allCasesCarrier', 'allCasesStatus', 'allCasesPriority'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener(id === 'allCasesSearch' ? 'input' : 'change', renderAllCasesTable);
+});
+document.getElementById('allCasesRefreshBtn').addEventListener('click', loadAllCases);
 
 let closedThisSession = 0;
 
